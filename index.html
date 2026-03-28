@@ -2,60 +2,64 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Stream Race - Cloud Sync</title>
+    <title>Stream Race - Pro Edition</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/matter-js/0.19.0/matter.min.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-database.js"></script>
     <style>
-        :root { --bg: #0d0d12; --accent: #ff0055; --win: #00ff99; }
+        :root { --bg: #0d0d12; --accent: #00f2ff; --win: #00ff99; }
         body { margin: 0; background: var(--bg); color: white; font-family: 'Impact', sans-serif; display: flex; width: 1920px; height: 1080px; overflow: hidden; }
         #game-container { flex: 1; position: relative; display: flex; justify-content: center; align-items: center; }
         canvas { background: #000; border: 5px solid #222; border-radius: 30px; }
-        #sidebar { width: 400px; background: #1a1a24; border-left: 10px solid var(--accent); padding: 30px; display: flex; flex-direction: column; }
-        .timer { font-size: 100px; color: var(--accent); text-align: center; }
-        .list { flex: 1; background: rgba(0,0,0,0.3); border-radius: 10px; padding: 15px; font-size: 24px; overflow-y: auto; border: 1px solid #333; }
+        #sidebar { width: 450px; background: #1a1a24; border-left: 10px solid var(--accent); padding: 25px; display: flex; flex-direction: column; }
+        
+        .timer { font-size: 100px; color: var(--accent); text-align: center; margin-bottom: 10px; }
+        textarea { width: 100%; height: 80px; background: #000; border: 2px solid #444; color: #00ff00; font-family: monospace; border-radius: 5px; padding: 10px; box-sizing: border-box; resize: none; }
+        textarea:focus { border-color: var(--accent); outline: none; }
+        .list { flex: 1; background: rgba(0,0,0,0.3); border-radius: 10px; padding: 15px; font-size: 24px; overflow-y: auto; border: 1px solid #333; margin-top: 15px; }
+        #win-msg { position: absolute; display: none; text-align: center; font-size: 100px; text-shadow: 0 0 20px var(--win); z-index: 10; }
     </style>
 </head>
 <body>
 
 <div id="game-container">
     <canvas id="gameCanvas" width="1300" height="1000"></canvas>
-    <div id="win-msg" style="position: absolute; display: none; text-align: center; font-size: 100px; text-shadow: 0 0 20px var(--win);">
-        WINNER:<br><span id="winner-name" style="color:var(--win)"></span>
-    </div>
+    <div id="win-msg">WINNER:<br><span id="winner-name" style="color:var(--win)"></span></div>
 </div>
 
 <div id="sidebar">
-    <div style="font-size: 12px; color: #888;">CLOUD CHANNEL:</div>
-    <div id="roomID" style="font-family: monospace; color: var(--accent); margin-bottom: 20px;">...generating...</div>
-    
     <div class="timer" id="countdown">60</div>
+    
+    <div style="font-size: 14px; color: var(--accent); margin-bottom: 5px;">PASTE NAMES FROM CONSOLE HERE:</div>
+    <textarea id="entryBox" placeholder="Paste names here... they add automatically!" oninput="processPaste()"></textarea>
+
+    <div style="color:var(--accent); font-size:20px; margin-top: 20px;">IN THE RACE:</div>
     <div id="playerList" class="list"></div>
 </div>
 
 <script>
-// 1. DATABASE SETUP (Public Temp Relay)
-const config = { databaseURL: "https://ball-race-relay-default-rtdb.firebaseio.com/" };
-firebase.initializeApp(config);
-const db = firebase.database();
-const myRoom = "room_" + Math.floor(Math.random() * 9000 + 1000);
-document.getElementById('roomID').innerText = myRoom;
+// --- PASTE LOGIC ---
+function processPaste() {
+    const val = document.getElementById('entryBox').value;
+    const names = val.split(',').map(n => n.trim()).filter(n => n !== "" && n !== "null");
+    
+    names.forEach(name => {
+        if (!queue.includes(name) && !isPlaying) {
+            queue.push(name);
+        }
+    });
+    
+    updateUI();
+}
 
-// Listen for new players from the cloud
-db.ref(myRoom).on("child_added", (snapshot) => {
-    const name = snapshot.val().user;
-    if (!queue.includes(name) && !isPlaying) {
-        queue.push(name);
-        document.getElementById('playerList').innerHTML = queue.map(n => `<div>👤 ${n}</div>`).join('');
-    }
-});
+function updateUI() {
+    document.getElementById('playerList').innerHTML = queue.map(n => `<div>👤 ${n}</div>`).join('');
+}
 
-// 2. GAME LOGIC
+// --- GAME LOGIC ---
 const { Engine, World, Bodies, Body } = Matter;
 const engine = Engine.create();
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
-engine.world.gravity.y = 1.5;
+engine.world.gravity.y = 1.4;
 
 let queue = [], activeBalls = [], ringParts = [], isPlaying = false, timer = 60, ringAngle = 0;
 
@@ -67,8 +71,12 @@ for (let i = 0; i < segments - gap; i++) {
 
 function startRace() {
     isPlaying = true; timer = 0;
-    [...queue, "NPC_1", "NPC_2"].forEach((name, i) => {
-        const b = Bodies.circle(650, 450, 18, { restitution: 1.1, plugin: { name, color: `hsl(${(i * 137) % 360}, 70%, 60%)` } });
+    const participants = [...queue, "Bot1", "Bot2", "Bot3", "Bot4"];
+    participants.forEach((name, i) => {
+        const b = Bodies.circle(650, 450, 18, { 
+            restitution: 1.1, friction: 0, 
+            plugin: { name, color: `hsl(${(i * 137) % 360}, 70%, 60%)` } 
+        });
         activeBalls.push(b); World.add(engine.world, b);
     });
 }
@@ -91,8 +99,11 @@ function loop() {
             isPlaying = false;
             document.getElementById('winner-name').innerText = activeBalls[0].plugin.name;
             document.getElementById('win-msg').style.display = 'block';
-            db.ref(myRoom).remove(); // Clear room for next round
-            setTimeout(() => { location.reload(); }, 8000);
+            setTimeout(() => { 
+                document.getElementById('win-msg').style.display = 'none';
+                activeBalls.forEach(b => World.remove(engine.world, b));
+                activeBalls = []; queue = []; updateUI(); timer = 20; 
+            }, 8000);
         }
     }
     ctx.clearRect(0, 0, 1300, 1000);
@@ -100,7 +111,8 @@ function loop() {
     ringParts.forEach(p => { ctx.beginPath(); p.vertices.forEach(v => ctx.lineTo(v.x, v.y)); ctx.fill(); });
     activeBalls.forEach(b => {
         ctx.fillStyle = b.plugin.color; ctx.beginPath(); ctx.arc(b.position.x, b.position.y, 18, 0, Math.PI*2); ctx.fill();
-        ctx.fillStyle = "white"; ctx.font = "16px Arial"; ctx.textAlign = "center"; ctx.fillText(b.plugin.name, b.position.x, b.position.y - 25);
+        ctx.fillStyle = "white"; ctx.font = "bold 16px Arial"; ctx.textAlign = "center";
+        ctx.fillText(b.plugin.name, b.position.x, b.position.y - 25);
     });
     requestAnimationFrame(loop);
 }
