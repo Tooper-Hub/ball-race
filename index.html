@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Stream Ball Race</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/matter-js/0.19.0/matter.min.js"></script>
+    <style>
+        :root { --bg: #0d0d12; --accent: #00f2ff; --win: #00ff99; }
+        body { margin: 0; background: var(--bg); color: white; font-family: 'Impact', sans-serif; display: flex; width: 1920px; height: 1080px; overflow: hidden; }
+        #game-container { flex: 1; position: relative; display: flex; justify-content: center; align-items: center; }
+        canvas { background: #000; border: 5px solid #222; border-radius: 30px; }
+        #sidebar { width: 400px; background: #1a1a24; border-left: 10px solid var(--accent); padding: 30px; display: flex; flex-direction: column; }
+        .timer { font-size: 120px; color: var(--accent); text-align: center; margin-bottom: 20px; }
+        .list { flex: 1; background: rgba(0,0,0,0.3); border-radius: 10px; padding: 15px; font-size: 24px; overflow-y: auto; border: 1px solid #333; }
+        #win-msg { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-size: 100px; text-align: center; text-shadow: 0 0 30px var(--win); display: none; pointer-events: none; }
+    </style>
+</head>
+<body>
+
+<div id="game-container">
+    <canvas id="gameCanvas" width="1300" height="1000"></canvas>
+    <div id="win-msg">WINNER:<br><span id="winner-name" style="color:var(--win)"></span></div>
+</div>
+
+<div id="sidebar">
+    <div class="timer" id="countdown">60</div>
+    <div style="color:var(--accent); font-size:20px; margin-bottom:10px;">PLAYERS JOINED:</div>
+    <div id="playerList" class="list"></div>
+    <p style="font-size:12px; color:#666; margin-top:10px;">Status: <span id="status">Waiting for link...</span></p>
+</div>
+
+<script>
+const { Engine, World, Bodies, Body } = Matter;
+const engine = Engine.create();
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+engine.world.gravity.y = 1.5;
+
+let queue = [];
+let activeBalls = [];
+let ringParts = [];
+let isPlaying = false;
+let timer = 60;
+let ringAngle = 0;
+
+// Arena Setup
+const radius = 450, thickness = 40, segments = 50, gap = 6;
+for (let i = 0; i < segments - gap; i++) {
+    const p = Bodies.rectangle(650, 500, (Math.PI * 2 * radius / segments) + 10, thickness, { isStatic: true, restitution: 1.2 });
+    ringParts.push(p);
+    World.add(engine.world, p);
+}
+
+// THE RECEIVER: This listens for the YouTube Script
+window.addEventListener("message", (event) => {
+    if (event.data.type === "PLAYER_JOIN") {
+        const name = event.data.user;
+        if (!queue.includes(name) && !isPlaying) {
+            queue.push(name);
+            document.getElementById('playerList').innerHTML = queue.map(n => `<div>👤 ${n}</div>`).join('');
+            document.getElementById('status').innerText = "Last join: " + name;
+        }
+    }
+});
+
+function startRace() {
+    isPlaying = true;
+    timer = 0;
+    // Add NPCs if queue is small
+    const participants = [...queue, "Bot1", "Bot2", "Bot3", "Bot4", "Bot5"];
+    participants.forEach((name, i) => {
+        const b = Bodies.circle(650 + (Math.random()*40-20), 450 + (Math.random()*40-20), 18, {
+            restitution: 1.1, friction: 0,
+            plugin: { name, color: `hsl(${(i * 137) % 360}, 70%, 60%)` }
+        });
+        activeBalls.push(b);
+        World.add(engine.world, b);
+    });
+}
+
+function loop() {
+    Engine.update(engine, 1000/60);
+    ringAngle += 0.025;
+    ringParts.forEach((p, i) => {
+        const a = (i / segments) * Math.PI * 2 + ringAngle;
+        Body.setPosition(p, { x: 650 + Math.cos(a) * radius, y: 500 + Math.sin(a) * radius });
+        Body.setAngle(p, a);
+    });
+
+    if (isPlaying) {
+        for (let i = activeBalls.length - 1; i >= 0; i--) {
+            const b = activeBalls[i];
+            const d = Math.hypot(b.position.x - 650, b.position.y - 500);
+            if (d > radius + 100) {
+                World.remove(engine.world, b);
+                activeBalls.splice(i, 1);
+            }
+        }
+        if (activeBalls.length === 1 && isPlaying) {
+            const winner = activeBalls[0].plugin.name;
+            isPlaying = false;
+            document.getElementById('winner-name').innerText = winner;
+            document.getElementById('win-msg').style.display = 'block';
+            setTimeout(() => {
+                document.getElementById('win-msg').style.display = 'none';
+                activeBalls.forEach(b => World.remove(engine.world, b));
+                activeBalls = [];
+                queue = [];
+                document.getElementById('playerList').innerHTML = "";
+                timer = 15; 
+            }, 7000);
+        }
+    }
+
+    ctx.clearRect(0, 0, 1300, 1000);
+    ctx.fillStyle = "#333";
+    ringParts.forEach(p => {
+        ctx.beginPath();
+        p.vertices.forEach(v => ctx.lineTo(v.x, v.y));
+        ctx.fill();
+    });
+
+    activeBalls.forEach(b => {
+        ctx.fillStyle = b.plugin.color;
+        ctx.beginPath(); ctx.arc(b.position.x, b.position.y, 18, 0, Math.PI*2); ctx.fill();
+        ctx.fillStyle = "white"; ctx.font = "16px Arial"; ctx.textAlign = "center";
+        ctx.fillText(b.plugin.name, b.position.x, b.position.y - 25);
+    });
+    requestAnimationFrame(loop);
+}
+
+setInterval(() => {
+    if (timer > 0 && !isPlaying) {
+        timer--;
+        document.getElementById('countdown').innerText = timer;
+        if (timer <= 0) startRace();
+    }
+}, 1000);
+
+loop();
+</script>
+</body>
+</html>
