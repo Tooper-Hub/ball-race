@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Stream Ball Race</title>
+    <title>Stream Ball Race - Stable Connect</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/matter-js/0.19.0/matter.min.js"></script>
     <style>
         :root { --bg: #0d0d12; --accent: #00f2ff; --win: #00ff99; }
@@ -10,26 +10,39 @@
         #game-container { flex: 1; position: relative; display: flex; justify-content: center; align-items: center; }
         canvas { background: #000; border: 5px solid #222; border-radius: 30px; }
         #sidebar { width: 400px; background: #1a1a24; border-left: 10px solid var(--accent); padding: 30px; display: flex; flex-direction: column; }
-        .timer { font-size: 120px; color: var(--accent); text-align: center; margin-bottom: 20px; }
+        
+        .connect-btn { background: var(--accent); color: black; padding: 15px; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; margin-bottom: 20px; font-family: sans-serif; }
+        .connect-btn:hover { background: white; }
+        
+        .timer { font-size: 100px; color: var(--accent); text-align: center; margin-bottom: 20px; }
         .list { flex: 1; background: rgba(0,0,0,0.3); border-radius: 10px; padding: 15px; font-size: 24px; overflow-y: auto; border: 1px solid #333; }
-        #win-msg { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-size: 100px; text-align: center; text-shadow: 0 0 30px var(--win); display: none; pointer-events: none; }
+        #status-light { display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: red; margin-right: 5px; }
     </style>
 </head>
 <body>
 
 <div id="game-container">
     <canvas id="gameCanvas" width="1300" height="1000"></canvas>
-    <div id="win-msg">WINNER:<br><span id="winner-name" style="color:var(--win)"></span></div>
+    <div id="win-msg" style="position: absolute; display: none; text-align: center; font-size: 100px; text-shadow: 0 0 20px var(--win);">
+        WINNER:<br><span id="winner-name" style="color:var(--win)"></span>
+    </div>
 </div>
 
 <div id="sidebar">
+    <button class="connect-btn" onclick="openChat()">STEP 1: CONNECT CHAT</button>
+    
     <div class="timer" id="countdown">60</div>
-    <div style="color:var(--accent); font-size:20px; margin-bottom:10px;">PLAYERS JOINED:</div>
+    
+    <div style="font-family: sans-serif; font-size: 14px; margin-bottom: 20px;">
+        <span id="status-light"></span> STATUS: <span id="status-text">DISCONNECTED</span>
+    </div>
+
+    <div style="color:var(--accent); font-size:20px; margin-bottom:10px;">PLAYERS:</div>
     <div id="playerList" class="list"></div>
-    <p style="font-size:12px; color:#666; margin-top:10px;">Status: <span id="status">Waiting for link...</span></p>
 </div>
 
 <script>
+// Game Logic (Matter.js)
 const { Engine, World, Bodies, Body } = Matter;
 const engine = Engine.create();
 const canvas = document.getElementById('gameCanvas');
@@ -43,7 +56,7 @@ let isPlaying = false;
 let timer = 60;
 let ringAngle = 0;
 
-// Arena Setup
+// Create Arena
 const radius = 450, thickness = 40, segments = 50, gap = 6;
 for (let i = 0; i < segments - gap; i++) {
     const p = Bodies.rectangle(650, 500, (Math.PI * 2 * radius / segments) + 10, thickness, { isStatic: true, restitution: 1.2 });
@@ -51,14 +64,25 @@ for (let i = 0; i < segments - gap; i++) {
     World.add(engine.world, p);
 }
 
-// THE RECEIVER: This listens for the YouTube Script
+// 1. OPEN CHAT FUNCTION
+function openChat() {
+    const streamID = prompt("Paste your YouTube Video ID (the part after v=):", "YpSfvTQ9Jrg");
+    if (streamID) {
+        window.chatWindow = window.open(`https://www.youtube.com/live_chat?v=${streamID}`, "ytChat", "width=400,height=600");
+        document.getElementById('status-text').innerText = "CHAT OPENED - RUN SCRIPT";
+        document.getElementById('status-light').style.background = "orange";
+    }
+}
+
+// 2. RECEIVE MESSAGE FUNCTION
 window.addEventListener("message", (event) => {
     if (event.data.type === "PLAYER_JOIN") {
         const name = event.data.user;
         if (!queue.includes(name) && !isPlaying) {
             queue.push(name);
             document.getElementById('playerList').innerHTML = queue.map(n => `<div>👤 ${n}</div>`).join('');
-            document.getElementById('status').innerText = "Last join: " + name;
+            document.getElementById('status-text').innerText = "CONNECTED - RECEIVING";
+            document.getElementById('status-light').style.background = "#00ff99";
         }
     }
 });
@@ -66,10 +90,9 @@ window.addEventListener("message", (event) => {
 function startRace() {
     isPlaying = true;
     timer = 0;
-    // Add NPCs if queue is small
-    const participants = [...queue, "Bot1", "Bot2", "Bot3", "Bot4", "Bot5"];
+    const participants = [...queue, "Bot-Alpha", "Bot-Beta", "Bot-Gamma"];
     participants.forEach((name, i) => {
-        const b = Bodies.circle(650 + (Math.random()*40-20), 450 + (Math.random()*40-20), 18, {
+        const b = Bodies.circle(650, 450, 18, {
             restitution: 1.1, friction: 0,
             plugin: { name, color: `hsl(${(i * 137) % 360}, 70%, 60%)` }
         });
@@ -97,29 +120,18 @@ function loop() {
             }
         }
         if (activeBalls.length === 1 && isPlaying) {
-            const winner = activeBalls[0].plugin.name;
             isPlaying = false;
-            document.getElementById('winner-name').innerText = winner;
+            document.getElementById('winner-name').innerText = activeBalls[0].plugin.name;
             document.getElementById('win-msg').style.display = 'block';
-            setTimeout(() => {
-                document.getElementById('win-msg').style.display = 'none';
-                activeBalls.forEach(b => World.remove(engine.world, b));
-                activeBalls = [];
-                queue = [];
-                document.getElementById('playerList').innerHTML = "";
-                timer = 15; 
-            }, 7000);
+            setTimeout(() => { location.reload(); }, 8000);
         }
     }
 
     ctx.clearRect(0, 0, 1300, 1000);
     ctx.fillStyle = "#333";
     ringParts.forEach(p => {
-        ctx.beginPath();
-        p.vertices.forEach(v => ctx.lineTo(v.x, v.y));
-        ctx.fill();
+        ctx.beginPath(); p.vertices.forEach(v => ctx.lineTo(v.x, v.y)); ctx.fill();
     });
-
     activeBalls.forEach(b => {
         ctx.fillStyle = b.plugin.color;
         ctx.beginPath(); ctx.arc(b.position.x, b.position.y, 18, 0, Math.PI*2); ctx.fill();
@@ -136,7 +148,6 @@ setInterval(() => {
         if (timer <= 0) startRace();
     }
 }, 1000);
-
 loop();
 </script>
 </body>
